@@ -1,0 +1,34 @@
+# Personal data
+mp3/
+emotes.json
+song_tags.json
+song_ratings.json
+settings.json
+
+# Logs
+*.log
+
+# Build output
+dist/
+
+# Dependencies
+node_modules/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Personal files
+songy.csv
+songy.txt
+*.rar
+
+# Mobile leftovers (mobile version lives in a separate repo)
+/capacitor.config.ts
+/package.json
+/package-lock.json
+
+# Dev/scratch files
+test.html
+check_counts.py
+check_labels.py

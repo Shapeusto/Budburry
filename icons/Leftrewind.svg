@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="15" height="10" fill="none" viewBox="0 0 15 10">
+  <g class="Leftrewind">
+    <path fill="currentColor" d="M3.5 4.233a1 1 0 0 0 0 1.732l6.205 3.583a1 1 0 0 0 1.5-.866V1.517a1 1 0 0 0-1.5-.866L3.5 4.233Z" class="Polygon 63"/>
+    <path fill="currentColor" d="M2 1.602a1 1 0 0 0-2 0v7a1 1 0 1 0 2 0v-7Z" class="Rectangle 2878"/>
+    <path fill="currentColor" d="M14.2 1.55c0-1.192-1.218-1.936-2.192-1.34L12 .214v9.372l.008.005c.974.595 2.19-.15 2.191-1.34V1.549Z" class="Intersect"/>
+  </g>
+</svg>
