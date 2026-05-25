@@ -57,8 +57,8 @@
     <aside class="sidebar">
       <section class="panel">
         <div class="panel-head">
-          <h2>Category</h2>
-          <button id="category-add-btn" class="add-btn" type="button">+ Add</button>
+          <h2><span class="panel-icon tag-tab-icon icon-category"></span>Category</h2>
+          <button id="category-add-btn" class="add-btn" type="button"><span class="add-plus">+</span> Add</button>
         </div>
         <div class="panel-body">
           <ul id="category-list"></ul>
@@ -67,8 +67,8 @@
       </section>
       <section class="panel">
         <div class="panel-head">
-          <h2>Emote</h2>
-          <button id="emote-add-btn" class="add-btn" type="button">+ Add</button>
+          <h2><span class="panel-icon tag-tab-icon icon-emote"></span>Emote</h2>
+          <button id="emote-add-btn" class="add-btn" type="button"><span class="add-plus">+</span> Add</button>
         </div>
         <div class="panel-body">
           <ul id="emote-list"></ul>
@@ -119,6 +119,7 @@
     })();
   </script>
 
+  <div id="tag-menu-backdrop" class="tag-menu-backdrop hidden"></div>
   <div id="tag-menu" class="tag-menu hidden"></div>
 
   <!-- Folder browser modal -->

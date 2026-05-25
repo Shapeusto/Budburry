@@ -22,6 +22,11 @@ const serverScript = isDev
   ? path.join(appRoot, 'server.py')
   : path.join(process.resourcesPath, 'server.py')
 
+const gotLock = app.requestSingleInstanceLock()
+if (!gotLock) {
+  app.quit()
+}
+
 let pythonProcess = null
 let mainWindow = null
 let tray = null
@@ -109,6 +114,10 @@ function createTray() {
   ]))
   tray.on('double-click', () => { mainWindow.show(); mainWindow.focus() })
 }
+
+app.on('second-instance', () => {
+  if (mainWindow) { mainWindow.show(); mainWindow.focus() }
+})
 
 app.whenReady().then(async () => {
   startPythonServer()

@@ -38,6 +38,7 @@ const btnSortName = document.getElementById("btn-sort-name");
 const btnSortStar = document.getElementById("btn-sort-star");
 const audio = document.getElementById("audio-player");
 const tagMenu = document.getElementById("tag-menu");
+const tagMenuBackdrop = document.getElementById("tag-menu-backdrop");
 const bottomPlayer = document.getElementById("bottom-player");
 const dialogOverlay = document.getElementById("custom-dialog-overlay");
 const dialogMessage = document.getElementById("custom-dialog-message");
@@ -231,8 +232,7 @@ const _coverObserver = new IntersectionObserver((entries) => {
     if (song) ensureSongCover(song);
   }
 }, { rootMargin: "300px" });
-let draggingSongId = null;
-let dragGhostEl = null;
+
 let bottomPlayerHasAnimatedIn = false;
 
 // Visualizer
@@ -528,24 +528,6 @@ function renderSidebar() {
       ev.stopPropagation();
       openCategoryActionsMenu(cat, ev.clientX, ev.clientY);
     };
-    li.ondragover = (ev) => {
-      if (!draggingSongId) return;
-      ev.preventDefault();
-      li.classList.add("drop-target");
-    };
-    li.ondragleave = () => li.classList.remove("drop-target");
-    li.ondrop = async (ev) => {
-      ev.preventDefault();
-      li.classList.remove("drop-target");
-      if (!draggingSongId) return;
-      try {
-        await moveSongToCategory(draggingSongId, cat);
-      } catch (err) {
-        console.error(err);
-      } finally {
-        draggingSongId = null;
-      }
-    };
     categoryList.appendChild(li);
   });
 
@@ -656,7 +638,11 @@ function renderFilters() {
     const span = document.createElement("span");
     const isCategory = state.selectedCategories.has(item);
     span.className = `pill active ${isCategory ? "category-pill" : "emote-pill"}`;
-    span.textContent = `${item} ×`;
+    span.textContent = item;
+    const x = document.createElement("span");
+    x.className = "pill-x";
+    x.textContent = "×";
+    span.appendChild(x);
     span.onclick = () => {
       state.selectedCategories.delete(item);
       state.selectedTags.delete(item);
@@ -682,28 +668,27 @@ function getSortedVisibleSongs() {
   return songs;
 }
 
-function makeDragHandlers(card, thumbRef) {
-  card.draggable = true;
-  card.ondragstart = (ev) => {
-    draggingSongId = card.dataset.id;
-    ev.dataTransfer.effectAllowed = "move";
-    ev.dataTransfer.setData("text/plain", card.dataset.id);
-    const rect = thumbRef.getBoundingClientRect();
-    const bg = window.getComputedStyle(thumbRef).backgroundImage;
-    dragGhostEl = document.createElement("div");
-    dragGhostEl.classList.add("drag-ghost");
-    dragGhostEl.style.width = `${rect.width * 0.5}px`;
-    dragGhostEl.style.height = `${rect.height * 0.5}px`;
-    dragGhostEl.style.backgroundImage = bg;
-    document.body.appendChild(dragGhostEl);
-    ev.dataTransfer.setDragImage(dragGhostEl, rect.width * 0.25, rect.height * 0.25);
-  };
-  card.ondragend = () => {
-    draggingSongId = null;
-    document.querySelectorAll(".drop-target").forEach((el) => el.classList.remove("drop-target"));
-    if (dragGhostEl) { dragGhostEl.remove(); dragGhostEl = null; }
-  };
+function _addLongPress(el, song) {
+  let timer = null;
+  let fired = false;
+  el.addEventListener("touchstart", (ev) => {
+    fired = false;
+    const touch = ev.touches[0];
+    timer = setTimeout(() => {
+      fired = true;
+      timer = null;
+      openTagMenu(song, touch.clientX, touch.clientY);
+    }, 500);
+  }, { passive: true });
+  el.addEventListener("touchend", (ev) => {
+    if (timer) { clearTimeout(timer); timer = null; }
+    if (fired) { fired = false; ev.preventDefault(); }
+  });
+  el.addEventListener("touchmove", () => {
+    if (timer) { clearTimeout(timer); timer = null; }
+  });
 }
+
 
 function renderGridCard(song) {
   const card = document.createElement("article");
@@ -715,6 +700,7 @@ function renderGridCard(song) {
   if (song.coverUrl) thumb.style.backgroundImage = `url('${song.coverUrl}')`;
   thumb.onclick = () => handleSongPrimaryAction(song.id);
   card.oncontextmenu = (ev) => { ev.preventDefault(); openTagMenu(song, ev.clientX, ev.clientY); };
+  _addLongPress(card, song);
 
   const progress = document.createElement("div");
   progress.className = "progress";
@@ -735,7 +721,6 @@ function renderGridCard(song) {
   thumb.appendChild(duration);
   card.appendChild(thumb);
   card.appendChild(title);
-  makeDragHandlers(card, thumb);
   songGrid.appendChild(card);
   ensureSongDuration(song);
   _coverObserver.observe(card);
@@ -746,6 +731,7 @@ function renderListRow(song) {
   card.className = "song-card";
   card.dataset.id = song.id;
   card.oncontextmenu = (ev) => { ev.preventDefault(); openTagMenu(song, ev.clientX, ev.clientY); };
+  _addLongPress(card, song);
 
   const thumb = document.createElement("div");
   thumb.className = "thumb";
@@ -790,7 +776,6 @@ function renderListRow(song) {
   card.appendChild(tagsEl);
   card.appendChild(progressWrap);
   card.appendChild(playBtn);
-  makeDragHandlers(card, thumb);
   songGrid.appendChild(card);
 }
 
@@ -1011,36 +996,28 @@ btnSortStar.addEventListener("click", () => {
   renderSongs();
 });
 
+function _closeTagMenu() {
+  tagMenu.classList.add("hidden");
+  tagMenu.classList.remove("tag-menu-sheet");
+  if (tagMenuBackdrop) tagMenuBackdrop.classList.add("hidden");
+}
+
 function openTagMenu(song, x, y) {
-  const existingTags = new Set(song.tags);
-  const allTags = [...state.tagSet].sort();
-  tagMenu.innerHTML = "";
-  tagMenu.classList.add("tag-menu-tags");
-
+  let activeTab = "category";
   let currentRating = song.rating || 0;
+  const existingTags = new Set(song.tags);
 
-  const categoryRow = document.createElement("div");
-  categoryRow.className = "tag-row tag-category-row";
-
-  const categoryName = document.createElement("span");
-  categoryName.textContent = song.category;
-
-  const starsWrap = document.createElement("div");
-  starsWrap.className = "tag-rating-row";
-
-  const renderStars = () => {
-    starsWrap.innerHTML = "";
+  function renderStars(wrap) {
+    wrap.innerHTML = "";
     for (let i = 1; i <= 5; i++) {
       const star = document.createElement("span");
       star.className = "tag-star" + (i <= currentRating ? " active" : "");
       star.dataset.value = i;
       star.onmouseenter = () => {
-        starsWrap.querySelectorAll(".tag-star").forEach((s) => {
-          s.classList.toggle("hover", Number(s.dataset.value) <= i);
-        });
+        wrap.querySelectorAll(".tag-star").forEach((s) => s.classList.toggle("hover", Number(s.dataset.value) <= i));
       };
       star.onmouseleave = () => {
-        starsWrap.querySelectorAll(".tag-star").forEach((s) => s.classList.remove("hover"));
+        wrap.querySelectorAll(".tag-star").forEach((s) => s.classList.remove("hover"));
       };
       star.onclick = async (ev) => {
         ev.stopPropagation();
@@ -1048,87 +1025,155 @@ function openTagMenu(song, x, y) {
         currentRating = newRating;
         song.rating = newRating;
         if (!localMode) {
-          await fetch("/api/ratings", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ id: song.id, rating: newRating }),
-          });
+          await fetch("/api/ratings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: song.id, rating: newRating }) });
         } else {
           localState.songRatings = localState.songRatings || {};
           localState.songRatings[song.id] = newRating;
           persistLocalState();
         }
-        renderStars();
+        renderStars(wrap);
         renderSongs();
       };
-      starsWrap.appendChild(star);
+      wrap.appendChild(star);
     }
-  };
-  renderStars();
+  }
 
-  categoryRow.appendChild(categoryName);
-  categoryRow.appendChild(starsWrap);
-  tagMenu.appendChild(categoryRow);
+  function buildMenu() {
+    tagMenu.innerHTML = "";
+    tagMenu.classList.add("tag-menu-tags");
 
-  const tagList = document.createElement("div");
-  tagList.className = "tag-menu-list";
+    // Header: tab label + tab icons
+    const header = document.createElement("div");
+    header.className = "tag-menu-header";
 
-  allTags.forEach((tag) => {
-    const row = document.createElement("label");
-    row.className = "tag-row";
-    row.innerHTML = `<span>${tag}</span>`;
+    const label = document.createElement("span");
+    label.className = "tag-menu-label";
+    label.textContent = activeTab === "category" ? "CATEGORY" : "EMOTE";
 
-    const input = document.createElement("input");
-    input.type = "checkbox";
-    input.className = "tag-checkbox-input";
-    input.checked = existingTags.has(tag);
-    input.onchange = async () => {
-      if (input.checked) existingTags.add(tag);
-      else existingTags.delete(tag);
+    const tabs = document.createElement("div");
+    tabs.className = "tag-menu-tabs";
 
-      if (!localMode) {
-        await fetch("/api/tags", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: song.id, tags: [...existingTags] }),
-        });
-      } else {
-        localState.songTags[song.id] = [...existingTags];
-        persistLocalState();
-      }
+    const catTab = document.createElement("button");
+    catTab.type = "button";
+    catTab.className = "tag-menu-tab" + (activeTab === "category" ? " active" : "");
+    const catIcon = document.createElement("span");
+    catIcon.className = "tag-tab-icon icon-category";
+    catTab.appendChild(catIcon);
+    catTab.onclick = (ev) => { ev.stopPropagation(); activeTab = "category"; buildMenu(); };
 
-      song.tags = [...existingTags];
-      song.tags.forEach((t) => state.tagSet.add(normalizeTag(t)));
-      renderSidebar();
-      renderFilters();
-      renderSongs();
-    };
+    const emoteTab = document.createElement("button");
+    emoteTab.type = "button";
+    emoteTab.className = "tag-menu-tab" + (activeTab === "emote" ? " active" : "");
+    const emoteIcon = document.createElement("span");
+    emoteIcon.className = "tag-tab-icon icon-emote";
+    emoteTab.appendChild(emoteIcon);
+    emoteTab.onclick = (ev) => { ev.stopPropagation(); activeTab = "emote"; buildMenu(); };
 
-    const checkboxUi = document.createElement("span");
-    checkboxUi.className = "tag-checkbox-ui";
+    tabs.appendChild(catTab);
+    tabs.appendChild(emoteTab);
+    header.appendChild(label);
+    header.appendChild(tabs);
+    tagMenu.appendChild(header);
 
-    row.appendChild(input);
-    row.appendChild(checkboxUi);
-    tagList.appendChild(row);
-  });
-  tagMenu.appendChild(tagList);
+    // Song title + stars
+    const songRow = document.createElement("div");
+    songRow.className = "tag-row tag-category-row";
+    const titleEl = document.createElement("span");
+    titleEl.className = "tag-song-name";
+    titleEl.textContent = song.title;
+    const starsWrap = document.createElement("div");
+    starsWrap.className = "tag-rating-row";
+    renderStars(starsWrap);
+    songRow.appendChild(titleEl);
+    songRow.appendChild(starsWrap);
+    tagMenu.appendChild(songRow);
 
-  tagMenu.classList.remove("hidden");
+    // Scrollable list
+    const list = document.createElement("div");
+    list.className = "tag-menu-list";
 
-  // Position menu after it has real dimensions, then keep it inside viewport.
-  const margin = 8;
-  const menuRect = tagMenu.getBoundingClientRect();
-  const playerRect = bottomPlayer && !bottomPlayer.classList.contains("hidden")
-    ? bottomPlayer.getBoundingClientRect()
-    : null;
-  const bottomSafe = playerRect ? (window.innerHeight - playerRect.top) + margin : margin;
-  const maxLeft = Math.max(margin, window.innerWidth - menuRect.width - margin);
-  const maxTop = Math.max(margin, window.innerHeight - menuRect.height - bottomSafe);
-  const left = Math.min(Math.max(margin, x), maxLeft);
-  const top = Math.min(Math.max(margin, y), maxTop);
+    if (activeTab === "category") {
+      state.categories.forEach((cat) => {
+        const row = document.createElement("label");
+        row.className = "tag-row";
+        const nameEl = document.createElement("span");
+        nameEl.textContent = cat;
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.className = "tag-checkbox-input";
+        input.checked = song.category === cat;
+        input.onchange = async (ev) => {
+          ev.stopPropagation();
+          if (!input.checked) { input.checked = true; return; }
+          list.querySelectorAll(".tag-checkbox-input").forEach((cb) => { if (cb !== input) cb.checked = false; });
+          await moveSongToCategory(song.id, cat);
+          song.category = cat;
+          renderSidebar();
+          renderFilters();
+          renderSongs();
+        };
+        const checkUi = document.createElement("span");
+        checkUi.className = "tag-checkbox-ui";
+        row.appendChild(nameEl);
+        row.appendChild(input);
+        row.appendChild(checkUi);
+        list.appendChild(row);
+      });
+    } else {
+      const allTags = [...state.tagSet].sort();
+      allTags.forEach((tag) => {
+        const row = document.createElement("label");
+        row.className = "tag-row";
+        const nameEl = document.createElement("span");
+        nameEl.textContent = tag;
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.className = "tag-checkbox-input";
+        input.checked = existingTags.has(tag);
+        input.onchange = async () => {
+          if (input.checked) existingTags.add(tag);
+          else existingTags.delete(tag);
+          if (!localMode) {
+            await fetch("/api/tags", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: song.id, tags: [...existingTags] }) });
+          } else {
+            localState.songTags[song.id] = [...existingTags];
+            persistLocalState();
+          }
+          song.tags = [...existingTags];
+          song.tags.forEach((t) => state.tagSet.add(normalizeTag(t)));
+          renderSidebar();
+          renderFilters();
+          renderSongs();
+        };
+        const checkUi = document.createElement("span");
+        checkUi.className = "tag-checkbox-ui";
+        row.appendChild(nameEl);
+        row.appendChild(input);
+        row.appendChild(checkUi);
+        list.appendChild(row);
+      });
+    }
 
-  tagMenu.style.left = `${left}px`;
-  tagMenu.style.top = `${top}px`;
+    tagMenu.appendChild(list);
+    tagMenu.classList.remove("hidden");
+
+    if (isNative) {
+      tagMenu.classList.add("tag-menu-sheet");
+      if (tagMenuBackdrop) tagMenuBackdrop.classList.remove("hidden");
+    } else {
+      tagMenu.classList.remove("tag-menu-sheet");
+      const margin = 8;
+      const menuRect = tagMenu.getBoundingClientRect();
+      const playerRect = bottomPlayer && !bottomPlayer.classList.contains("hidden") ? bottomPlayer.getBoundingClientRect() : null;
+      const bottomSafe = playerRect ? (window.innerHeight - playerRect.top) + margin : margin;
+      const maxLeft = Math.max(margin, window.innerWidth - menuRect.width - margin);
+      const maxTop = Math.max(margin, window.innerHeight - menuRect.height - bottomSafe);
+      tagMenu.style.left = `${Math.min(Math.max(margin, x), maxLeft)}px`;
+      tagMenu.style.top = `${Math.min(Math.max(margin, y), maxTop)}px`;
+    }
+  }
+
+  buildMenu();
 }
 
 function openEmoteActionsMenu(tag, x, y) {
@@ -1141,7 +1186,7 @@ function openEmoteActionsMenu(tag, x, y) {
   renameBtn.textContent = "Premenovat";
   renameBtn.onclick = async (ev) => {
     ev.stopPropagation();
-    tagMenu.classList.add("hidden");
+    _closeTagMenu();
     const nextName = await showPrompt("Novy nazov emote:", tag);
     if (!nextName || nextName.trim() === tag) return;
     try {
@@ -1162,7 +1207,7 @@ function openEmoteActionsMenu(tag, x, y) {
   deleteBtn.textContent = "Vymazat";
   deleteBtn.onclick = async (ev) => {
     ev.stopPropagation();
-    tagMenu.classList.add("hidden");
+    _closeTagMenu();
     const ok = await showConfirm(`Vymazat emote "${tag}"?`);
     if (!ok) return;
     await deleteEmote(tag);
@@ -1196,7 +1241,7 @@ function openCategoryActionsMenu(category, x, y) {
   renameBtn.textContent = "Premenovat";
   renameBtn.onclick = async (ev) => {
     ev.stopPropagation();
-    tagMenu.classList.add("hidden");
+    _closeTagMenu();
     const nextName = await showPrompt("Novy nazov kategorie:", category);
     if (!nextName || nextName.trim() === category) return;
     try {
@@ -1217,7 +1262,7 @@ function openCategoryActionsMenu(category, x, y) {
   deleteBtn.textContent = "Vymazat";
   deleteBtn.onclick = async (ev) => {
     ev.stopPropagation();
-    tagMenu.classList.add("hidden");
+    _closeTagMenu();
     const ok = await showConfirm(`Vymazat kategoriu "${category}"?`);
     if (!ok) return;
     try {
@@ -1248,10 +1293,13 @@ function openCategoryActionsMenu(category, x, y) {
 }
 
 document.addEventListener("click", (ev) => {
-  if (!tagMenu.contains(ev.target)) {
-    tagMenu.classList.add("hidden");
+  if (!tagMenu.contains(ev.target) && (!tagMenuBackdrop || !tagMenuBackdrop.contains(ev.target))) {
+    _closeTagMenu();
   }
 });
+if (tagMenuBackdrop) {
+  tagMenuBackdrop.addEventListener("click", (ev) => { ev.stopPropagation(); _closeTagMenu(); });
+}
 
 emoteAddBtn.addEventListener("click", (ev) => {
   ev.stopPropagation();
