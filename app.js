@@ -1108,9 +1108,16 @@ function openTagMenu(song, x, y) {
           list.querySelectorAll(".tag-checkbox-input").forEach((cb) => { if (cb !== input) cb.checked = false; });
           await moveSongToCategory(song.id, cat);
           song.category = cat;
+          const _sy1 = window.scrollY;
           renderSidebar();
           renderFilters();
-          renderSongs();
+          if (state.selectedCategories.size > 0) {
+            renderSongs();
+          } else {
+            const card = songGrid.querySelector(`[data-id="${song.id}"]`);
+            if (card) { const c = card.querySelector(".list-cat"); if (c) c.textContent = cat; }
+          }
+          requestAnimationFrame(() => window.scrollTo(0, _sy1));
         };
         const checkUi = document.createElement("span");
         checkUi.className = "tag-checkbox-ui";
@@ -1141,9 +1148,16 @@ function openTagMenu(song, x, y) {
           }
           song.tags = [...existingTags];
           song.tags.forEach((t) => state.tagSet.add(normalizeTag(t)));
+          const _sy2 = window.scrollY;
           renderSidebar();
           renderFilters();
-          renderSongs();
+          if (state.selectedTags.size > 0) {
+            renderSongs();
+          } else {
+            const card = songGrid.querySelector(`[data-id="${song.id}"]`);
+            if (card) { const t = card.querySelector(".list-tags-col"); if (t) t.textContent = song.tags.join(", "); }
+          }
+          requestAnimationFrame(() => window.scrollTo(0, _sy2));
         };
         const checkUi = document.createElement("span");
         checkUi.className = "tag-checkbox-ui";
