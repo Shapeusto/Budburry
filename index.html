@@ -121,13 +121,28 @@
 
   <div id="tag-menu" class="tag-menu hidden"></div>
 
+  <!-- Folder browser modal -->
+  <div id="folder-browser-overlay" class="custom-dialog-overlay hidden">
+    <div class="folder-browser">
+      <div class="folder-browser-header">
+        <button id="folder-browser-back" class="folder-browser-back-btn">←</button>
+        <span id="folder-browser-path" class="folder-browser-current-path"></span>
+      </div>
+      <button id="folder-browser-select" class="folder-browser-select-btn">Select this folder</button>
+      <div id="folder-browser-list" class="folder-browser-list"></div>
+    </div>
+  </div>
+
   <!-- Settings modal -->
   <div id="settings-overlay" class="custom-dialog-overlay hidden">
     <div class="custom-dialog" style="min-width:360px;max-width:520px">
       <p style="margin:0;font-size:15px;font-weight:600;color:var(--text)">Settings</p>
       <div style="display:flex;flex-direction:column;gap:6px">
         <label style="font-size:12px;color:var(--muted)">MP3 folder path</label>
-        <input id="settings-mp3-path" class="custom-dialog-input" type="text" placeholder="/path/to/mp3" />
+        <div style="display:flex;gap:8px">
+          <input id="settings-mp3-path" class="custom-dialog-input" type="text" placeholder="/path/to/mp3" style="flex:1" />
+          <button id="settings-browse" class="custom-dialog-btn custom-dialog-btn-cancel" type="button">Browse</button>
+        </div>
       </div>
       <div class="custom-dialog-btns">
         <button id="settings-cancel" class="custom-dialog-btn custom-dialog-btn-cancel" type="button">Cancel</button>

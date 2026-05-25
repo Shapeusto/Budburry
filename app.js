@@ -10,7 +10,8 @@
   sortMode: "default",
 };
 const LOCAL_STATE_KEY = "playlist-local-state-v1";
-let localMode = false;
+const isNative = !!(window.Capacitor?.isNativePlatform?.());
+let localMode = isNative;
 let localState = { songTags: {}, songCategories: {}, emotes: [], categories: [] };
 
 const categoryList = document.getElementById("category-list");
@@ -125,7 +126,111 @@ if ("serviceWorker" in navigator) {
 }
 
 let visibleSongs = [];
+let renderedCount = 0;
+const PAGE_SIZE = 40;
+let _scrollSentinel = null;
+let _scrollObserver = null;
 const durationCache = new Map();
+const coverCache = new Map();
+
+function _b64(bytes) {
+  let s = "";
+  for (let i = 0; i < bytes.length; i += 8192)
+    s += String.fromCharCode(...bytes.subarray(i, i + 8192));
+  return btoa(s);
+}
+
+function extractAlbumArt(buffer) {
+  const b = new Uint8Array(buffer);
+  if (b[0] !== 0x49 || b[1] !== 0x44 || b[2] !== 0x33) return null;
+  const ver = b[3];
+  const hasExtHeader = (b[5] & 0x40) !== 0;
+  const tagSize = ((b[6] & 0x7F) << 21) | ((b[7] & 0x7F) << 14) | ((b[8] & 0x7F) << 7) | (b[9] & 0x7F);
+  let off = 10;
+  if (hasExtHeader) {
+    const extSize = ver === 4
+      ? ((b[10] & 0x7F) << 21) | ((b[11] & 0x7F) << 14) | ((b[12] & 0x7F) << 7) | (b[13] & 0x7F)
+      : (b[10] << 24) | (b[11] << 16) | (b[12] << 8) | b[13];
+    off += extSize;
+  }
+  const end = Math.min(tagSize + 10, b.length);
+  while (off < end - 10) {
+    let fid, fsz, fhs;
+    if (ver >= 3) {
+      fid = String.fromCharCode(b[off], b[off+1], b[off+2], b[off+3]);
+      fsz = ver === 4
+        ? ((b[off+4] & 0x7F) << 21) | ((b[off+5] & 0x7F) << 14) | ((b[off+6] & 0x7F) << 7) | (b[off+7] & 0x7F)
+        : (b[off+4] << 24) | (b[off+5] << 16) | (b[off+6] << 8) | b[off+7];
+      fhs = 10;
+    } else {
+      fid = String.fromCharCode(b[off], b[off+1], b[off+2]);
+      fsz = (b[off+3] << 16) | (b[off+4] << 8) | b[off+5];
+      fhs = 6;
+    }
+    if (fsz <= 0) break;
+    if (fid === "APIC" || fid === "PIC") {
+      let i = off + fhs;
+      const enc = b[i++];
+      let mime;
+      if (fid === "PIC") {
+        mime = String.fromCharCode(b[i], b[i+1], b[i+2]) === "PNG" ? "image/png" : "image/jpeg";
+        i += 3;
+      } else {
+        let me = i; while (me < b.length && b[me] !== 0) me++;
+        mime = String.fromCharCode(...b.slice(i, me)) || "image/jpeg";
+        i = me + 1;
+      }
+      i++; // picture type
+      if (enc === 0 || enc === 3) { while (i < b.length && b[i] !== 0) i++; i++; }
+      else { while (i < b.length - 1 && !(b[i] === 0 && b[i+1] === 0)) i += 2; i += 2; }
+      const img = b.subarray(i, off + fhs + fsz);
+      if (img.length > 0) return `data:${mime};base64,${_b64(img)}`;
+    }
+    off += fhs + fsz;
+  }
+  return null;
+}
+
+let _coverActive = 0;
+const _coverQueue = [];
+
+function _coverNext() {
+  while (_coverActive < 3 && _coverQueue.length > 0) {
+    const fn = _coverQueue.shift();
+    _coverActive++;
+    fn().finally(() => { _coverActive--; _coverNext(); });
+  }
+}
+
+async function ensureSongCover(song) {
+  if (coverCache.has(song.id)) return;
+  if (song.coverUrl) { coverCache.set(song.id, song.coverUrl); return; }
+  coverCache.set(song.id, null);
+  _coverQueue.push(async () => {
+    try {
+      const url = resolveAudioUrl(song.audioUrl);
+      const resp = await fetch(url, { headers: { Range: "bytes=0-131071" } });
+      const buf = await resp.arrayBuffer();
+      const art = extractAlbumArt(buf);
+      coverCache.set(song.id, art);
+      if (art) {
+        const card = document.querySelector(`.song-card[data-id="${CSS.escape(song.id)}"]`);
+        if (card) card.querySelector(".thumb").style.backgroundImage = `url('${art}')`;
+        if (state.currentSongId === song.id) playerCover.style.backgroundImage = `url('${art}')`;
+      }
+    } catch (_) {}
+  });
+  _coverNext();
+}
+
+const _coverObserver = new IntersectionObserver((entries) => {
+  for (const entry of entries) {
+    if (!entry.isIntersecting) continue;
+    _coverObserver.unobserve(entry.target);
+    const song = state.songs.find(s => s.id === entry.target.dataset.id);
+    if (song) ensureSongCover(song);
+  }
+}, { rootMargin: "300px" });
 let draggingSongId = null;
 let dragGhostEl = null;
 let bottomPlayerHasAnimatedIn = false;
@@ -231,6 +336,46 @@ function initTheme() {
   applyTheme(mode);
 }
 
+async function scanDeviceSongs() {
+  const basePath = (localStorage.getItem("settings-mp3-path") || "").replace(/\/+$/, "");
+  if (!basePath) return { songs: [], categories: [], tags: [] };
+  const { Filesystem } = window.Capacitor?.Plugins || {};
+  if (!Filesystem) return { songs: [], categories: [], tags: [] };
+  const audioExts = [".mp3", ".m4a", ".webm", ".opus", ".flac", ".wav", ".aac"];
+  const categories = [];
+  const songs = [];
+  try {
+    const { files: topFiles } = await Filesystem.readdir({ path: basePath });
+    const dirs = topFiles.filter(f => f.type === "directory").sort((a, b) => a.name.localeCompare(b.name));
+    // MP3s directly in root (no subfolders) — no category
+    const rootAudio = topFiles
+      .filter(f => f.type === "file" && audioExts.some(ext => f.name.toLowerCase().endsWith(ext)))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    for (const file of rootAudio) {
+      songs.push({ id: file.name, title: file.name.replace(/\.[^.]+$/, ""), category: "", audioUrl: file.name, coverUrl: null, tags: [], rating: 0 });
+    }
+    // MP3s in subfolders — category = subfolder name
+    for (const dir of dirs) {
+      try {
+        const { files: dirFiles } = await Filesystem.readdir({ path: basePath + "/" + dir.name });
+        const audioFiles = dirFiles
+          .filter(f => f.type === "file" && audioExts.some(ext => f.name.toLowerCase().endsWith(ext)))
+          .sort((a, b) => a.name.localeCompare(b.name));
+        if (audioFiles.length > 0) {
+          categories.push(dir.name);
+          for (const file of audioFiles) {
+            const id = dir.name + "/" + file.name;
+            songs.push({ id, title: file.name.replace(/\.[^.]+$/, ""), category: dir.name, audioUrl: id, coverUrl: null, tags: [], rating: 0 });
+          }
+        }
+      } catch (_) {}
+    }
+  } catch (e) {
+    console.error("scanDeviceSongs failed:", e);
+  }
+  return { songs, categories, tags: [] };
+}
+
 async function loadData() {
   let data;
   try {
@@ -239,9 +384,13 @@ async function loadData() {
     data = await resp.json();
   } catch (_err) {
     localMode = true;
-    const resp = await fetch("/data/songs.json");
-    if (!resp.ok) throw new Error("local songs.json not found");
-    data = await resp.json();
+    if (isNative) {
+      data = await scanDeviceSongs();
+    } else {
+      const resp = await fetch("/data/songs.json");
+      if (!resp.ok) throw new Error("local songs.json not found");
+      data = await resp.json();
+    }
   }
 
   if (localMode) {
@@ -580,7 +729,7 @@ function renderGridCard(song) {
   const title = document.createElement("div");
   title.className = "song-title";
   title.textContent = song.title;
-  title.onclick = () => handleSongPrimaryAction(song.id);
+
 
   thumb.appendChild(progress);
   thumb.appendChild(duration);
@@ -589,6 +738,7 @@ function renderGridCard(song) {
   makeDragHandlers(card, thumb);
   songGrid.appendChild(card);
   ensureSongDuration(song);
+  _coverObserver.observe(card);
 }
 
 function renderListRow(song) {
@@ -644,16 +794,39 @@ function renderListRow(song) {
   songGrid.appendChild(card);
 }
 
-function renderSongs() {
-  songGrid.innerHTML = "";
-  visibleSongs = getSortedVisibleSongs();
-  songGrid.classList.toggle("list-view", state.viewMode === "list");
+function _renderPage() {
+  const batch = visibleSongs.slice(renderedCount, renderedCount + PAGE_SIZE);
   if (state.viewMode === "list") {
-    visibleSongs.forEach(renderListRow);
+    batch.forEach(renderListRow);
   } else {
-    visibleSongs.forEach(renderGridCard);
+    batch.forEach(renderGridCard);
+  }
+  renderedCount += batch.length;
+
+  if (_scrollSentinel) _scrollSentinel.remove();
+  if (renderedCount < visibleSongs.length) {
+    _scrollSentinel = document.createElement("div");
+    _scrollSentinel.className = "scroll-sentinel";
+    songGrid.appendChild(_scrollSentinel);
+    if (!_scrollObserver) {
+      _scrollObserver = new IntersectionObserver((entries) => {
+        if (entries[0].isIntersecting) _renderPage();
+      }, { rootMargin: "200px" });
+    }
+    _scrollObserver.observe(_scrollSentinel);
+  } else {
+    if (_scrollObserver) { _scrollObserver.disconnect(); _scrollObserver = null; }
   }
   syncPlayingCard();
+}
+
+function renderSongs() {
+  if (_scrollObserver) { _scrollObserver.disconnect(); _scrollObserver = null; }
+  songGrid.innerHTML = "";
+  renderedCount = 0;
+  visibleSongs = getSortedVisibleSongs();
+  songGrid.classList.toggle("list-view", state.viewMode === "list");
+  _renderPage();
 }
 
 function formatDuration(totalSeconds) {
@@ -667,7 +840,7 @@ function ensureSongDuration(song) {
   if (durationCache.has(song.id)) return;
   const probe = document.createElement("audio");
   probe.preload = "metadata";
-  probe.src = song.audioUrl;
+  probe.src = resolveAudioUrl(song.audioUrl);
   probe.addEventListener("loadedmetadata", () => {
     durationCache.set(song.id, formatDuration(probe.duration));
     const card = document.querySelector(`.song-card[data-id="${song.id}"]`);
@@ -702,7 +875,8 @@ function syncBottomPlayer() {
   }
   playerTitle.textContent = song.title;
   playerSubtitle.textContent = `${song.category}${song.tags.length ? `  ${song.tags.join(", ")}` : ""}`;
-  playerCover.style.backgroundImage = song.coverUrl ? `url('${song.coverUrl}')` : "";
+  const cover = coverCache.get(song.id) || song.coverUrl || null;
+  playerCover.style.backgroundImage = cover ? `url('${cover}')` : "";
   playerToggleIcon.className = `ui-icon ${audio.paused ? "icon-play" : "icon-stop"}`;
   playerCurrentTime.textContent = formatDuration(audio.currentTime || 0);
   playerTotalTime.textContent = formatDuration(audio.duration || 0);
@@ -715,6 +889,16 @@ function syncBottomPlayer() {
   const effectiveVolume = audio.muted ? 0 : audio.volume;
   playerVolumeBar.style.width = `${Math.max(0, Math.min(1, effectiveVolume)) * 100}%`;
   playerVolumeToggle.classList.toggle("muted", audio.muted);
+}
+
+function resolveAudioUrl(relUrl) {
+  if (!isNative) return relUrl;
+  const basePath = (localStorage.getItem("settings-mp3-path") || "/sdcard/BudburryPlaylist").replace(/\/+$/, "");
+  const encoded = relUrl.split("/").map(encodeURIComponent).join("/");
+  if (window.Capacitor?.convertFileSrc) {
+    return window.Capacitor.convertFileSrc(`${basePath}/${relUrl}`);
+  }
+  return `https://localhost/_capacitor_file_${basePath}/${encoded}`;
 }
 
 function handleSongPrimaryAction(songId) {
@@ -738,7 +922,7 @@ function playSong(songId, onReady) {
   if (typeof onReady === "function") {
     audio.addEventListener("loadedmetadata", onReady, { once: true });
   }
-  audio.src = song.audioUrl;
+  audio.src = resolveAudioUrl(song.audioUrl);
   audio.play();
   syncPlayingCard();
 }
@@ -799,20 +983,12 @@ function updateViewBtns() {
   btnViewList.classList.toggle("active", state.viewMode === "list");
   btnSortName.classList.toggle("active", state.sortMode === "name");
   btnSortStar.classList.toggle("active", state.sortMode === "rating");
-  btnSortNameMob.classList.toggle("active", state.sortMode === "name");
-  btnSortStarMob.classList.toggle("active", state.sortMode === "rating");
+  if (btnSortNameMob) btnSortNameMob.classList.toggle("active", state.sortMode === "name");
+  if (btnSortStarMob) btnSortStarMob.classList.toggle("active", state.sortMode === "rating");
 }
 
-btnSortNameMob.addEventListener("click", () => {
-  state.sortMode = state.sortMode === "name" ? "default" : "name";
-  updateViewBtns();
-  renderSongs();
-});
-btnSortStarMob.addEventListener("click", () => {
-  state.sortMode = state.sortMode === "rating" ? "default" : "rating";
-  updateViewBtns();
-  renderSongs();
-});
+if (btnSortNameMob) btnSortNameMob.addEventListener("click", () => { state.sortMode = state.sortMode === "name" ? "default" : "name"; updateViewBtns(); renderSongs(); });
+if (btnSortStarMob) btnSortStarMob.addEventListener("click", () => { state.sortMode = state.sortMode === "rating" ? "default" : "rating"; updateViewBtns(); renderSongs(); });
 
 btnViewGrid.addEventListener("click", () => {
   state.viewMode = "grid";
@@ -1191,90 +1367,169 @@ settingsCancel.addEventListener("click", () => settingsOverlay.classList.add("hi
 settingsOverlay.addEventListener("click", (e) => { if (e.target === settingsOverlay) settingsOverlay.classList.add("hidden"); });
 settingsMp3Path.addEventListener("keydown", (e) => { if (e.key === "Enter") saveSettings(); if (e.key === "Escape") settingsOverlay.classList.add("hidden"); });
 
-let _downloadPollId = null;
-let _downloadMode = false;
+// Download (desktop only)
+if (!isNative && downloadToggle) {
+  let _downloadPollId = null;
+  let _downloadMode = false;
 
-downloadToggle.addEventListener("click", () => {
-  _downloadMode = !_downloadMode;
-  const downloadToggleIcon = document.getElementById("download-toggle-icon");
+  downloadToggle.addEventListener("click", () => {
+    _downloadMode = !_downloadMode;
+    const downloadToggleIcon = document.getElementById("download-toggle-icon");
+    if (_downloadMode) {
+      downloadWrap.classList.remove("hidden");
+      searchWrap.classList.add("hidden");
+      downloadToggleIcon.setAttribute("class", "ui-icon icon-sound");
+      downloadInput.focus();
+    } else {
+      downloadWrap.classList.add("hidden");
+      searchWrap.classList.remove("hidden");
+      downloadToggleIcon.setAttribute("class", "ui-icon icon-download");
+    }
+  });
 
-  if (_downloadMode) {
-    downloadWrap.classList.remove("hidden");
-    searchWrap.classList.add("hidden");
-    downloadToggleIcon.setAttribute("class", "ui-icon icon-sound");
-    console.log("Download mode ON, icon changed to sound");
-    downloadInput.focus();
-  } else {
-    downloadWrap.classList.add("hidden");
-    searchWrap.classList.remove("hidden");
-    downloadToggleIcon.setAttribute("class", "ui-icon icon-download");
-    console.log("Download mode OFF, icon changed to download");
+  downloadBtn.addEventListener("click", startDownload);
+  downloadInput.addEventListener("keydown", (e) => { if (e.key === "Enter") startDownload(); });
+
+  async function startDownload() {
+    const url = downloadInput.value.trim();
+    if (!url) return;
+    downloadProgressWrap.classList.remove("hidden");
+    downloadProgressBar.style.width = "0%";
+    downloadBtn.disabled = true;
+    downloadInput.disabled = true;
+    try {
+      const res = await fetch("/api/download", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      const data = await res.json();
+      if (!data.ok) { showAlert(data.error || "Download failed"); resetDownloadUI(); return; }
+      pollDownload(data.id);
+    } catch (e) {
+      showAlert("Download failed: " + e.message);
+      resetDownloadUI();
+    }
+  }
+
+  function pollDownload(taskId) {
+    _downloadPollId = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/download/status?id=${taskId}`);
+        const data = await res.json();
+        const pct = Math.round((data.progress || 0) * 100);
+        downloadProgressBar.style.width = pct + "%";
+        if (data.status === "done") {
+          clearInterval(_downloadPollId);
+          downloadProgressWrap.classList.add("hidden");
+          downloadProgressBar.style.width = "0%";
+          downloadBtn.disabled = false;
+          downloadInput.disabled = false;
+          downloadInput.value = "";
+          downloadStatus.classList.remove("hidden");
+          await loadData();
+          setTimeout(() => { downloadStatus.classList.add("hidden"); }, 3000);
+        } else if (data.status === "error") {
+          clearInterval(_downloadPollId);
+          showAlert("Download error: " + (data.error || "unknown"));
+          downloadProgressWrap.classList.add("hidden");
+          downloadProgressBar.style.width = "0%";
+          downloadBtn.disabled = false;
+          downloadInput.disabled = false;
+          downloadInput.value = "";
+        }
+      } catch (_) {}
+    }, 500);
+  }
+
+  function resetDownloadUI() {
+    downloadBtn.disabled = false;
+    downloadInput.disabled = false;
+    downloadInput.value = "";
+    downloadProgressBar.style.width = "0%";
+  }
+} else if (isNative && downloadToggle) {
+  downloadToggle.classList.add("hidden");
+}
+
+// Folder browser
+const folderBrowserOverlay = document.getElementById("folder-browser-overlay");
+const folderBrowserPathEl = document.getElementById("folder-browser-path");
+const folderBrowserList = document.getElementById("folder-browser-list");
+const folderBrowserBack = document.getElementById("folder-browser-back");
+const folderBrowserSelect = document.getElementById("folder-browser-select");
+const settingsBrowse = document.getElementById("settings-browse");
+
+let _fbCurrentPath = "/storage/emulated/0";
+let _fbHistory = [];
+
+async function _fbBrowseTo(path) {
+  _fbCurrentPath = path;
+  folderBrowserPathEl.textContent = path;
+  folderBrowserList.innerHTML = '<div style="padding:16px;font-size:12px;color:var(--muted)">Loading…</div>';
+  try {
+    const { Filesystem } = window.Capacitor?.Plugins || {};
+    if (!Filesystem) throw new Error("Filesystem plugin not available");
+    const { files } = await Filesystem.readdir({ path });
+    const dirs = files.filter(f => f.type === "directory").sort((a, b) => a.name.localeCompare(b.name));
+    if (dirs.length === 0) {
+      folderBrowserList.innerHTML = '<div style="padding:16px;font-size:12px;color:var(--muted)">No subfolders</div>';
+      return;
+    }
+    folderBrowserList.innerHTML = "";
+    dirs.forEach(dir => {
+      const item = document.createElement("div");
+      item.className = "folder-browser-item";
+      item.textContent = dir.name;
+      item.addEventListener("click", () => {
+        _fbHistory.push(_fbCurrentPath);
+        _fbBrowseTo(path.replace(/\/+$/, "") + "/" + dir.name);
+      });
+      folderBrowserList.appendChild(item);
+    });
+  } catch (e) {
+    folderBrowserList.innerHTML = `<div style="padding:16px;font-size:12px;color:var(--muted)">Cannot read folder: ${e.message || "Permission denied"}</div>`;
+  }
+}
+
+if (isNative && settingsBrowse) settingsBrowse.addEventListener("click", () => {
+  _fbHistory = [];
+  const start = localStorage.getItem("settings-mp3-path") || "/storage/emulated/0";
+  _fbBrowseTo(start);
+  settingsOverlay.classList.add("hidden");
+  folderBrowserOverlay.classList.remove("hidden");
+});
+if (!isNative && settingsBrowse) settingsBrowse.classList.add("hidden");
+
+
+folderBrowserSelect.addEventListener("click", () => {
+  settingsMp3Path.value = _fbCurrentPath;
+  folderBrowserOverlay.classList.add("hidden");
+  saveSettings();
+});
+
+folderBrowserOverlay.addEventListener("click", (e) => {
+  if (e.target === folderBrowserOverlay) {
+    folderBrowserOverlay.classList.add("hidden");
+    settingsOverlay.classList.remove("hidden");
   }
 });
 
-downloadBtn.addEventListener("click", startDownload);
-downloadInput.addEventListener("keydown", (e) => { if (e.key === "Enter") startDownload(); });
-
-async function startDownload() {
-  const url = downloadInput.value.trim();
-  if (!url) return;
-  downloadProgressWrap.classList.remove("hidden");
-  downloadProgressBar.style.width = "0%";
-  downloadBtn.disabled = true;
-  downloadInput.disabled = true;
-  try {
-    const res = await fetch("/api/download", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url }),
-    });
-    const data = await res.json();
-    if (!data.ok) { showAlert(data.error || "Download failed"); resetDownloadUI(); return; }
-    pollDownload(data.id);
-  } catch (e) {
-    showAlert("Download failed: " + e.message);
-    resetDownloadUI();
+folderBrowserBack.addEventListener("click", () => {
+  if (_fbHistory.length > 0) {
+    _fbBrowseTo(_fbHistory.pop());
+  } else {
+    const parent = _fbCurrentPath.replace(/\/[^/]+\/?$/, "");
+    if (parent && parent !== _fbCurrentPath) {
+      _fbBrowseTo(parent);
+    } else {
+      folderBrowserOverlay.classList.add("hidden");
+      settingsOverlay.classList.remove("hidden");
+    }
   }
-}
+});
 
-function pollDownload(taskId) {
-  _downloadPollId = setInterval(async () => {
-    try {
-      const res = await fetch(`/api/download/status?id=${taskId}`);
-      const data = await res.json();
-      const pct = Math.round((data.progress || 0) * 100);
-      downloadProgressBar.style.width = pct + "%";
-      if (data.status === "done") {
-        clearInterval(_downloadPollId);
-        downloadProgressWrap.classList.add("hidden");
-        downloadProgressBar.style.width = "0%";
-        downloadBtn.disabled = false;
-        downloadInput.disabled = false;
-        downloadInput.value = "";
-        downloadStatus.classList.remove("hidden");
-        await loadData();
-        setTimeout(() => {
-          downloadStatus.classList.add("hidden");
-        }, 3000);
-      } else if (data.status === "error") {
-        clearInterval(_downloadPollId);
-        showAlert("Download error: " + (data.error || "unknown"));
-        downloadProgressWrap.classList.add("hidden");
-        downloadProgressBar.style.width = "0%";
-        downloadBtn.disabled = false;
-        downloadInput.disabled = false;
-        downloadInput.value = "";
-      }
-    } catch (_) {}
-  }, 500);
-}
-
-function resetDownloadUI() {
-  downloadBtn.disabled = false;
-  downloadInput.disabled = false;
-  downloadInput.value = "";
-  downloadProgressBar.style.width = "0%";
-}
+// Android: download code removed
 
 playerToggle.addEventListener("click", () => {
   if (!state.currentSongId) return;
@@ -1351,6 +1606,16 @@ initTheme();
 
 categoryList.closest(".panel").classList.add("collapsed");
 emoteList.closest(".panel").classList.add("collapsed");
+
+// Request storage permission on Android via Filesystem plugin
+if (window.Capacitor && window.Capacitor.isNativePlatform()) {
+  (async () => {
+    try {
+      const { Filesystem } = window.Capacitor.Plugins;
+      if (Filesystem) await Filesystem.requestPermissions().catch(() => {});
+    } catch (_) {}
+  })();
+}
 
 loadData().then(() => {
   const preloaderBar = document.getElementById("preloader-bar");

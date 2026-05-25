@@ -45,6 +45,9 @@ Single-file Python HTTP server. Key responsibilities:
 Key API endpoints: `GET /api/songs`, `POST /api/tags`, `POST /api/move-song`, `POST /api/emotes`, `POST /api/emotes/rename`, `POST /api/emotes/delete`, `POST /api/categories`, `POST /api/categories/rename`, `POST /api/categories/delete`
 
 ### app.js
+> **Before reading app.js, always read `app.js.map.md` first.** It contains a full index of all functions with line numbers. Then use `Read app.js offset:X limit:Y` to read only the relevant section. Never read the whole file at once.
+> **When adding or removing functions in app.js, always update `app.js.map.md` accordingly.**
+
 Single-file vanilla JS, no framework. State is a plain object:
 ```js
 state = { songs, categories, tagSet, selectedCategories, selectedTags, search, currentSongId }
