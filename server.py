@@ -508,44 +508,49 @@ def _run_download(task_id, url, out_dir):
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
-            filename = ydl.prepare_filename(info)
+            entries = info.get('entries')
+            if entries:
+                entry_files = [(e, ydl.prepare_filename(e)) for e in entries if e]
+            else:
+                entry_files = [(info, ydl.prepare_filename(info))]
 
         # yt-dlp context closed — all file handles released
-        base = filename.rsplit('.', 1)[0]
-        mp3_path = base + '.mp3'
-
-        if not Path(mp3_path).exists():
-            mp3_path = filename
-
-        if MUTAGEN_AVAILABLE and Path(mp3_path).exists():
-            thumbnail_url = info.get('thumbnail')
-            if thumbnail_url:
+        def _embed_thumbnail(entry_info, entry_filename):
+            if not MUTAGEN_AVAILABLE:
+                return
+            try:
+                from mutagen.id3 import ID3, APIC
+                base = entry_filename.rsplit('.', 1)[0]
+                mp3 = base + '.mp3'
+                if not Path(mp3).exists():
+                    mp3 = entry_filename
+                if not Path(mp3).exists():
+                    return
+                thumbnail_url = entry_info.get('thumbnail')
+                if not thumbnail_url:
+                    return
+                thumb_ext = thumbnail_url.split('.')[-1].split('?')[0].lower()
+                if thumb_ext not in ('jpg', 'jpeg', 'png', 'webp'):
+                    thumb_ext = 'jpg'
+                thumb_path = base + '.' + thumb_ext
+                urllib.request.urlretrieve(thumbnail_url, thumb_path)
+                if not Path(thumb_path).exists():
+                    return
                 try:
-                    from mutagen.id3 import ID3, APIC
-                    thumb_ext = thumbnail_url.split('.')[-1].split('?')[0].lower()
-                    thumb_path = base + '.' + thumb_ext
-                    urllib.request.urlretrieve(thumbnail_url, thumb_path)
+                    audio = ID3(mp3)
+                except ID3NoHeaderError:
+                    audio = ID3()
+                mime_type = 'image/webp' if thumb_ext == 'webp' else 'image/jpeg'
+                with open(thumb_path, 'rb') as f:
+                    audio['APIC'] = APIC(encoding=3, mime=mime_type, type=3, desc=u'Cover', data=f.read())
+                audio.save(mp3, v2_version=4)
+                del audio
+                Path(thumb_path).unlink()
+            except Exception:
+                pass
 
-                    if Path(thumb_path).exists():
-                        try:
-                            audio = ID3(mp3_path)
-                        except ID3NoHeaderError:
-                            audio = ID3()
-
-                        mime_type = 'image/webp' if thumb_ext == 'webp' else 'image/jpeg'
-                        with open(thumb_path, 'rb') as f:
-                            audio['APIC'] = APIC(
-                                encoding=3,
-                                mime=mime_type,
-                                type=3,
-                                desc=u'Cover',
-                                data=f.read()
-                            )
-                        audio.save(mp3_path, v2_version=4)
-                        del audio
-                        Path(thumb_path).unlink()
-                except Exception:
-                    pass
+        for entry_info, entry_filename in entry_files:
+            _embed_thumbnail(entry_info, entry_filename)
 
         for ext in ['webp', 'jpg', 'jpeg', 'png']:
             for p in out_dir.glob(f'*.{ext}'):
