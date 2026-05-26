@@ -25,7 +25,8 @@ except ImportError:
 def _ffmpeg_available():
     try:
         import subprocess
-        result = subprocess.run(['ffmpeg', '-version'], capture_output=True, timeout=5)
+        ffmpeg_cmd = os.environ.get('FFMPEG_PATH', 'ffmpeg')
+        result = subprocess.run([ffmpeg_cmd, '-version'], capture_output=True, timeout=5)
         return result.returncode == 0
     except Exception:
         return False
@@ -543,10 +544,12 @@ def _run_download(task_id, url, out_dir):
                     except Exception:
                         pass
 
-            for ext in ['webp', 'jpg', 'jpeg', 'png', 'webp.info.json']:
-                p = Path(base + '.' + ext)
-                if p.exists():
-                    p.unlink()
+            for ext in ['webp', 'jpg', 'jpeg', 'png']:
+                for p in out_dir.glob(f'*.{ext}'):
+                    try:
+                        p.unlink()
+                    except Exception:
+                        pass
 
         _download_tasks[task_id]['status'] = 'done'
         _download_tasks[task_id]['progress'] = 1.0
