@@ -108,9 +108,9 @@ function createTray() {
   tray = new Tray(path.join(appRoot, 'icons', 'icon.ico'))
   tray.setToolTip("Budburry's")
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Otvoriť', click: () => { mainWindow.show(); mainWindow.focus() } },
+    { label: 'Open', click: () => { mainWindow.show(); mainWindow.focus() } },
     { type: 'separator' },
-    { label: 'Zatvoriť', click: () => { isQuitting = true; app.quit() } },
+    { label: 'Close', click: () => { isQuitting = true; app.quit() } },
   ]))
   tray.on('double-click', () => { mainWindow.show(); mainWindow.focus() })
 }

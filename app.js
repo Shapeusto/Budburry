@@ -760,10 +760,10 @@ function renderGridCard(song) {
   title.textContent = song.title;
 
 
-  thumb.appendChild(progress);
   thumb.appendChild(duration);
+  thumb.appendChild(title);
+  thumb.appendChild(progress);
   card.appendChild(thumb);
-  card.appendChild(title);
   songGrid.appendChild(card);
   ensureSongDuration(song);
   _coverObserver.observe(card);
@@ -1240,11 +1240,11 @@ function openEmoteActionsMenu(tag, x, y) {
   const renameBtn = document.createElement("button");
   renameBtn.type = "button";
   renameBtn.className = "tag-action-btn";
-  renameBtn.textContent = "Premenovat";
+  renameBtn.textContent = "Edit";
   renameBtn.onclick = async (ev) => {
     ev.stopPropagation();
     _closeTagMenu();
-    const nextName = await showPrompt("Novy nazov emote:", tag);
+    const nextName = await showPrompt("New name emote:", tag);
     if (!nextName || nextName.trim() === tag) return;
     try {
       await renameEmote(tag, nextName.trim());
@@ -1261,11 +1261,11 @@ function openEmoteActionsMenu(tag, x, y) {
   const deleteBtn = document.createElement("button");
   deleteBtn.type = "button";
   deleteBtn.className = "tag-action-btn";
-  deleteBtn.textContent = "Vymazat";
+  deleteBtn.textContent = "Delete";
   deleteBtn.onclick = async (ev) => {
     ev.stopPropagation();
     _closeTagMenu();
-    const ok = await showConfirm(`Vymazat emote "${tag}"?`);
+    const ok = await showConfirm(`Delete emote "${tag}"?`);
     if (!ok) return;
     await deleteEmote(tag);
   };
@@ -1295,11 +1295,11 @@ function openCategoryActionsMenu(category, x, y) {
   const renameBtn = document.createElement("button");
   renameBtn.type = "button";
   renameBtn.className = "tag-action-btn";
-  renameBtn.textContent = "Premenovat";
+  renameBtn.textContent = "Edit";
   renameBtn.onclick = async (ev) => {
     ev.stopPropagation();
     _closeTagMenu();
-    const nextName = await showPrompt("Novy nazov kategorie:", category);
+    const nextName = await showPrompt("New name kategorie:", category);
     if (!nextName || nextName.trim() === category) return;
     try {
       await renameCategory(category, nextName.trim());
@@ -1316,11 +1316,11 @@ function openCategoryActionsMenu(category, x, y) {
   const deleteBtn = document.createElement("button");
   deleteBtn.type = "button";
   deleteBtn.className = "tag-action-btn";
-  deleteBtn.textContent = "Vymazat";
+  deleteBtn.textContent = "Delete";
   deleteBtn.onclick = async (ev) => {
     ev.stopPropagation();
     _closeTagMenu();
-    const ok = await showConfirm(`Vymazat kategoriu "${category}"?`);
+    const ok = await showConfirm(`Delete category "${category}"?`);
     if (!ok) return;
     try {
       await deleteCategory(category);
