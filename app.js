@@ -1123,7 +1123,7 @@ function openTagMenu(song, x, y) {
     songRow.className = "tag-row tag-category-row";
     const titleEl = document.createElement("span");
     titleEl.className = "tag-song-name";
-    titleEl.textContent = song.title;
+    titleEl.textContent = song.category || song.title;
     const starsWrap = document.createElement("div");
     starsWrap.className = "tag-rating-row";
     renderStars(starsWrap);
