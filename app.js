@@ -700,7 +700,7 @@ function songMatches(song) {
   const byCategory = state.selectedCategories.size === 0 || state.selectedCategories.has(song.category);
   const byTags = state.selectedTags.size === 0 || [...state.selectedTags].every((t) => song.tags.includes(t));
   const byNotTags = state.notTags.size === 0 || ![...state.notTags].some((t) => song.tags.includes(t));
-  const bySearch = !state.search || song.title.toLowerCase().includes(state.search);
+  const bySearch = !state.search || state.search.split(",").map(s => s.trim()).filter(Boolean).some(term => song.title.toLowerCase().includes(term));
   return byCategory && byTags && byNotTags && bySearch;
 }
 
