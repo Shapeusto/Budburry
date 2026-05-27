@@ -1195,6 +1195,22 @@ body:not(.dark) .tag-star.hover {
   mask-image: url("/icons/Emote.svg");
 }
 
+.tag-tab-icon.icon-emotenot {
+  -webkit-mask-image: url("/icons/emotenot.svg");
+  mask-image: url("/icons/emotenot.svg");
+}
+
+.sidebar li.not-disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.not-pill .not-pill-label {
+  opacity: 0.6;
+  font-size: 9px;
+  margin-right: 2px;
+}
+
 .tag-song-name {
   overflow: hidden;
   text-overflow: ellipsis;

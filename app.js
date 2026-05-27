@@ -4,6 +4,7 @@
   tagSet: new Set(),
   selectedCategories: new Set(),
   selectedTags: new Set(),
+  notTags: new Set(),
   search: "",
   currentSongId: null,
   viewMode: "grid",
@@ -18,6 +19,7 @@ const categoryList = document.getElementById("category-list");
 const categoryAddBtn = document.getElementById("category-add-btn");
 const newCategoryInput = document.getElementById("new-category-input");
 const emoteList = document.getElementById("emote-list");
+const notList = document.getElementById("not-list");
 const emoteAddBtn = document.getElementById("emote-add-btn");
 const newEmoteInput = document.getElementById("new-emote-input");
 const selectedFilters = document.getElementById("selected-filters");
@@ -538,7 +540,7 @@ function renderSidebar() {
     li.className = state.selectedTags.has(tag) ? "" : "muted";
     li.onclick = () => {
       if (state.selectedTags.has(tag)) state.selectedTags.delete(tag);
-      else state.selectedTags.add(tag);
+      else { state.selectedTags.add(tag); state.notTags.delete(tag); }
       renderSidebar();
       renderFilters();
       renderSongs();
@@ -550,6 +552,26 @@ function renderSidebar() {
     };
     emoteList.appendChild(li);
   });
+
+  if (notList) {
+    notList.innerHTML = "";
+    [...state.tagSet].sort((a, b) => a.localeCompare(b)).forEach((tag) => {
+      const li = document.createElement("li");
+      li.innerHTML = `<span>${tag}</span><span class="count">${tagCount.get(tag) || 0}</span>`;
+      const isDisabled = state.selectedTags.has(tag);
+      li.className = state.notTags.has(tag) ? "" : "muted";
+      if (isDisabled) li.classList.add("not-disabled");
+      li.onclick = () => {
+        if (isDisabled) return;
+        if (state.notTags.has(tag)) state.notTags.delete(tag);
+        else state.notTags.add(tag);
+        renderSidebar();
+        renderFilters();
+        renderSongs();
+      };
+      notList.appendChild(li);
+    });
+  }
 }
 
 async function addNewEmote(rawTag) {
@@ -652,13 +674,34 @@ function renderFilters() {
     };
     selectedFilters.appendChild(span);
   });
+  [...state.notTags].forEach((tag) => {
+    const span = document.createElement("span");
+    span.className = "pill active not-pill";
+    const label = document.createElement("span");
+    label.className = "not-pill-label";
+    label.textContent = "NOT ";
+    span.appendChild(label);
+    span.appendChild(document.createTextNode(tag));
+    const x = document.createElement("span");
+    x.className = "pill-x";
+    x.textContent = "×";
+    span.appendChild(x);
+    span.onclick = () => {
+      state.notTags.delete(tag);
+      renderSidebar();
+      renderFilters();
+      renderSongs();
+    };
+    selectedFilters.appendChild(span);
+  });
 }
 
 function songMatches(song) {
   const byCategory = state.selectedCategories.size === 0 || state.selectedCategories.has(song.category);
   const byTags = state.selectedTags.size === 0 || [...state.selectedTags].every((t) => song.tags.includes(t));
+  const byNotTags = state.notTags.size === 0 || ![...state.notTags].some((t) => song.tags.includes(t));
   const bySearch = !state.search || song.title.toLowerCase().includes(state.search);
-  return byCategory && byTags && bySearch;
+  return byCategory && byTags && byNotTags && bySearch;
 }
 
 function getSortedVisibleSongs() {
@@ -1668,6 +1711,11 @@ initTheme();
 
 categoryList.closest(".panel").classList.add("collapsed");
 emoteList.closest(".panel").classList.add("collapsed");
+notList.closest(".panel").classList.add("collapsed");
+
+document.querySelector("#not-list").closest(".panel").querySelector("h2").addEventListener("click", () => {
+  notList.closest(".panel").classList.toggle("collapsed");
+});
 
 // Request storage permission on Android via Filesystem plugin
 if (window.Capacitor && window.Capacitor.isNativePlatform()) {
