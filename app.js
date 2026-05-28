@@ -13,6 +13,7 @@
 };
 const LOCAL_STATE_KEY = "playlist-local-state-v1";
 const isNative = !!(window.Capacitor?.isNativePlatform?.());
+if (isNative) document.body.classList.add('native');
 let localMode = isNative;
 let localState = { songTags: {}, songCategories: {}, emotes: [], categories: [] };
 
@@ -389,6 +390,21 @@ async function loadData() {
   } catch (_err) {
     localMode = true;
     if (isNative) {
+      try {
+        const seedResp = await fetch('/data/local-state-seed.json');
+        if (seedResp.ok) {
+          const seed = await seedResp.json();
+          const savedVersion = localStorage.getItem('playlist-seed-version');
+          if (savedVersion !== String(seed.version)) {
+            loadLocalState();
+            localState.songTags = seed.songTags || localState.songTags;
+            localState.emotes = seed.emotes || localState.emotes;
+            localState.songRatings = seed.songRatings || localState.songRatings;
+            persistLocalState();
+            localStorage.setItem('playlist-seed-version', String(seed.version));
+          }
+        }
+      } catch (_) {}
       data = await scanDeviceSongs();
     } else {
       const resp = await fetch("/data/songs.json");
@@ -1799,11 +1815,12 @@ function loadLocalState() {
     localState = {
       songTags: parsed.songTags && typeof parsed.songTags === "object" ? parsed.songTags : {},
       songCategories: parsed.songCategories && typeof parsed.songCategories === "object" ? parsed.songCategories : {},
+      songRatings: parsed.songRatings && typeof parsed.songRatings === "object" ? parsed.songRatings : {},
       emotes: Array.isArray(parsed.emotes) ? parsed.emotes : [],
       categories: Array.isArray(parsed.categories) ? parsed.categories : [],
     };
   } catch (_err) {
-    localState = { songTags: {}, songCategories: {}, emotes: [], categories: [] };
+    localState = { songTags: {}, songCategories: {}, emotes: [], categories: [], songRatings: {} };
   }
 }
 
@@ -1817,6 +1834,9 @@ function applyLocalOverrides(data) {
     if (Array.isArray(localState.songTags[song.id])) song.tags = localState.songTags[song.id].slice();
     if (typeof localState.songCategories[song.id] === "string" && localState.songCategories[song.id].trim()) {
       song.category = localState.songCategories[song.id].trim();
+    }
+    if (localState.songRatings && typeof localState.songRatings[song.id] === "number") {
+      song.rating = localState.songRatings[song.id];
     }
   });
   const categories = new Set([...(data.categories || []), ...(localState.categories || []), ...songs.map((s) => s.category)]);

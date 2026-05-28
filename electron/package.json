@@ -27,7 +27,8 @@
       "target": [{ "target": "dir", "arch": ["x64"] }]
     },
     "files": [
-      "main.js"
+      "main.js",
+      "preload.js"
     ],
     "extraResources": [
       { "from": "../server.py", "to": "server.py" },
@@ -35,6 +36,7 @@
       { "from": "../song_tags.json", "to": "../song_tags.json" },
       { "from": "../song_ratings.json", "to": "../song_ratings.json" },
       { "from": "../index.html", "to": "../index.html" },
+      { "from": "../mini-player.html", "to": "../mini-player.html" },
       { "from": "../app.js", "to": "../app.js" },
       { "from": "../styles.css", "to": "../styles.css" },
       { "from": "../logo_black.svg", "to": "../logo_black.svg" },

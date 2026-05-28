@@ -1,0 +1,76 @@
+PLÁN: Cloud sync cez Supabase (desktop ↔ mobile)
+=================================================
+
+CIEĽ
+----
+Ktokoľvek stiahne appku (desktop aj mobile), prihlási sa na účet
+a má automaticky synchronizované tagy, emotes, ratingy.
+Funguje odkiaľkoľvek, bez WiFi, bez IP adries.
+
+
+ZVOLENÁ TECHNOLÓGIA: Supabase (supabase.com)
+--------------------------------------------
+- Zadarmo (do 50 000 používateľov/mesiac, 500MB databáza)
+- Zabudované prihlasovanie (email + heslo)
+- Automatické API — žiadny serverový kód
+- JavaScript SDK — pár riadkov v app.js
+- Žiadne servery na spravovanie
+
+
+JEDNORAZOVÉ NASTAVENIE (urobíš raz)
+------------------------------------
+1. Registrovať sa na supabase.com
+2. Vytvoriť nový projekt (klikanie v UI, ~5 minút)
+3. Vytvoriť 3 tabuľky v databáze:
+   - song_tags    (user_id, song_id, tags)
+   - user_emotes  (user_id, emotes)
+   - song_ratings (user_id, song_id, rating)
+4. Skopírovať "Project URL" a "anon API key" do appky
+
+
+AKO BUDE APPKA FUNGOVAŤ
+------------------------
+Prvé spustenie:
+  → Zobrazí sa login/register obrazovka
+  → Prihlásenie emailom + heslom
+
+Po prihlásení (automaticky):
+  → Stiahne dáta zo Supabase → aplikuje na lokálny stav
+
+Keď zmeníš tag/emote/rating:
+  → Okamžite uloží do Supabase
+
+Sync tlačítko (manuálne, v hornom menu):
+  → Force-pull zo Supabase → prepíše lokálny stav
+
+
+ČO TREBA NAPROGRAMOVAŤ
+-----------------------
+1. Pridať Supabase SDK do index.html (jeden script tag)
+2. Konfig v app.js (URL + API kľúč)
+3. Login UI — jednoduchý overlay s email + heslo
+4. Funkcie v app.js:
+   - supabaseSignIn()  — prihlásenie
+   - supabaseSignUp()  — registrácia
+   - supabasePull()    — stiahni dáta zo Supabase
+   - supabasePush()    — odošli lokálne dáta do Supabase
+   - supabaseSync()    — pull + push (merge oboch strán)
+5. Auto-hooky: po každej zmene tagu/ratingu push do Supabase
+6. Sync ikona v topbare (nová Sync.svg)
+
+
+SÚBORY NA ZMENU
+---------------
+index.html   — login overlay, sync tlačítko, SDK script tag
+app.js       — Supabase init, auth, sync funkcie, hooky
+styles.css   — login overlay štýly, sync ikona, animácia
+icons/Sync.svg — nová ikona (vytvoriť)
+server.py    — ŽIADNA zmena potrebná
+
+
+OVERENIE (ako otestovať že to funguje)
+---------------------------------------
+1. Otvoriť appku → zobrazí sa login
+2. Registrovať nový účet
+3. Pridať tag na desktope → kliknúť Sync → otvoriť mobile → tag je tam
+4. Pridať rating na mobile → Sync → desktop má rovnaký rating

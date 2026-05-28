@@ -90,7 +90,7 @@ function createWindow() {
     minWidth: 800,
     minHeight: 600,
     icon: path.join(appRoot, 'icons', 'icon.ico'),
-    webPreferences: { nodeIntegration: false, contextIsolation: true, preload },
+    webPreferences: { nodeIntegration: false, contextIsolation: true, preload, backgroundThrottling: false },
     backgroundColor: '#161616',
     show: false,
     autoHideMenuBar: true,

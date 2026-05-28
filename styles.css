@@ -1207,8 +1207,8 @@ body:not(.dark) .tag-star.hover {
 }
 
 .tag-tab-icon.icon-emotenot {
-  -webkit-mask-image: url("/icons/emotenot.svg");
-  mask-image: url("/icons/emotenot.svg");
+  -webkit-mask-image: url("/icons/Emotenot.svg");
+  mask-image: url("/icons/Emotenot.svg");
 }
 
 .sidebar li.not-disabled {
@@ -1442,6 +1442,23 @@ body.dark .player-btn-rewind .ui-icon {
 body.dark .player-btn-rewind:hover .ui-icon {
   background: var(--rewind-hover);
 }
+
+body.native .player-btn-main {
+  background:
+    linear-gradient(180deg, #E1FF28 0%, #DBFF00 100%) padding-box,
+    linear-gradient(180deg, #F1FF9C 0%, #9DFF00 100%) border-box;
+  border: 1px solid transparent;
+  color: #1f1f1f;
+}
+body.native .player-btn-main:hover {
+  background:
+    linear-gradient(180deg, #E1FF28 0%, #DBFF00 100%) padding-box,
+    linear-gradient(180deg, #F1FF9C 0%, #9DFF00 100%) border-box;
+  border: 1px solid transparent;
+  color: #1f1f1f;
+}
+body.native .player-btn-rewind:hover { color: var(--gray-mid); }
+body.native .player-btn-rewind:hover .ui-icon { background: linear-gradient(180deg, #484848 0%, #333333 100%); }
 
 .player-timeline {
   display: grid;
