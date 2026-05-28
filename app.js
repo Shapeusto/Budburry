@@ -5,6 +5,7 @@
   selectedCategories: new Set(),
   selectedTags: new Set(),
   notTags: new Set(),
+  notCategories: new Set(),
   search: "",
   currentSongId: null,
   viewMode: "grid",
@@ -20,6 +21,7 @@ const categoryAddBtn = document.getElementById("category-add-btn");
 const newCategoryInput = document.getElementById("new-category-input");
 const emoteList = document.getElementById("emote-list");
 const notList = document.getElementById("not-list");
+const notCategoryList = document.getElementById("not-category-list");
 const emoteAddBtn = document.getElementById("emote-add-btn");
 const newEmoteInput = document.getElementById("new-emote-input");
 const selectedFilters = document.getElementById("selected-filters");
@@ -520,7 +522,7 @@ function renderSidebar() {
     li.className = state.selectedCategories.has(cat) ? "" : "muted";
     li.onclick = () => {
       if (state.selectedCategories.has(cat)) state.selectedCategories.delete(cat);
-      else state.selectedCategories.add(cat);
+      else { state.selectedCategories.add(cat); state.notCategories.delete(cat); }
       renderSidebar();
       renderFilters();
       renderSongs();
@@ -570,6 +572,26 @@ function renderSidebar() {
         renderSongs();
       };
       notList.appendChild(li);
+    });
+  }
+
+  if (notCategoryList) {
+    notCategoryList.innerHTML = "";
+    state.categories.forEach((cat) => {
+      const li = document.createElement("li");
+      li.innerHTML = `<span>${cat}</span><span class="count">${categoryCount.get(cat) || 0}</span>`;
+      const isDisabled = state.selectedCategories.has(cat);
+      li.className = state.notCategories.has(cat) ? "" : "muted";
+      if (isDisabled) li.classList.add("not-disabled");
+      li.onclick = () => {
+        if (isDisabled) return;
+        if (state.notCategories.has(cat)) state.notCategories.delete(cat);
+        else state.notCategories.add(cat);
+        renderSidebar();
+        renderFilters();
+        renderSongs();
+      };
+      notCategoryList.appendChild(li);
     });
   }
 }
@@ -694,14 +716,35 @@ function renderFilters() {
     };
     selectedFilters.appendChild(span);
   });
+  [...state.notCategories].forEach((cat) => {
+    const span = document.createElement("span");
+    span.className = "pill active not-pill";
+    const label = document.createElement("span");
+    label.className = "not-pill-label";
+    label.textContent = "NOT ";
+    span.appendChild(label);
+    span.appendChild(document.createTextNode(cat));
+    const x = document.createElement("span");
+    x.className = "pill-x";
+    x.textContent = "×";
+    span.appendChild(x);
+    span.onclick = () => {
+      state.notCategories.delete(cat);
+      renderSidebar();
+      renderFilters();
+      renderSongs();
+    };
+    selectedFilters.appendChild(span);
+  });
 }
 
 function songMatches(song) {
   const byCategory = state.selectedCategories.size === 0 || state.selectedCategories.has(song.category);
   const byTags = state.selectedTags.size === 0 || [...state.selectedTags].every((t) => song.tags.includes(t));
   const byNotTags = state.notTags.size === 0 || ![...state.notTags].some((t) => song.tags.includes(t));
+  const byNotCategories = state.notCategories.size === 0 || !state.notCategories.has(song.category);
   const bySearch = !state.search || state.search.split(",").map(s => s.trim()).filter(Boolean).some(term => song.title.toLowerCase().includes(term));
-  return byCategory && byTags && byNotTags && bySearch;
+  return byCategory && byTags && byNotTags && byNotCategories && bySearch;
 }
 
 function getSortedVisibleSongs() {
@@ -798,12 +841,38 @@ function renderListRow(song) {
   tagsEl.className = "list-tags-col";
   tagsEl.textContent = song.tags.join(", ");
 
-  const progressWrap = document.createElement("div");
-  progressWrap.className = "list-progress-wrap";
-  const progressBar = document.createElement("div");
-  progressBar.className = "list-progress-bar";
-  progressWrap.appendChild(progressBar);
-  progressWrap.onclick = (ev) => { ev.stopPropagation(); seekByProgressClick(song.id, progressWrap, ev.clientX); };
+  const starsWrap = document.createElement("div");
+  starsWrap.className = "list-stars";
+  let currentRating = song.rating || 0;
+  function renderListStars() {
+    starsWrap.innerHTML = "";
+    for (let i = 1; i <= 5; i++) {
+      const star = document.createElement("span");
+      star.className = "tag-star" + (i <= currentRating ? " active" : "");
+      star.onmouseenter = () => {
+        starsWrap.querySelectorAll(".tag-star").forEach((s, idx) => s.classList.toggle("hover", idx < i));
+      };
+      star.onmouseleave = () => {
+        starsWrap.querySelectorAll(".tag-star").forEach((s) => s.classList.remove("hover"));
+      };
+      star.onclick = async (ev) => {
+        ev.stopPropagation();
+        const newRating = currentRating === i ? 0 : i;
+        currentRating = newRating;
+        song.rating = newRating;
+        if (!localMode) {
+          await fetch("/api/ratings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: song.id, rating: newRating }) });
+        } else {
+          localState.songRatings = localState.songRatings || {};
+          localState.songRatings[song.id] = newRating;
+          persistLocalState();
+        }
+        renderListStars();
+      };
+      starsWrap.appendChild(star);
+    }
+  }
+  renderListStars();
 
   const playBtn = document.createElement("button");
   playBtn.className = "list-play-btn";
@@ -817,7 +886,7 @@ function renderListRow(song) {
   card.appendChild(info);
   card.appendChild(catEl);
   card.appendChild(tagsEl);
-  card.appendChild(progressWrap);
+  card.appendChild(starsWrap);
   card.appendChild(playBtn);
   songGrid.appendChild(card);
 }
@@ -988,6 +1057,53 @@ audio.addEventListener("timeupdate", () => {
   syncBottomPlayer();
 });
 audio.addEventListener("loadedmetadata", syncBottomPlayer);
+
+// ── Mini player (Electron only) ──────────────────────────────────────────────
+const isElectron = /Electron/.test(navigator.userAgent);
+if (isElectron) {
+  const collapseBtn = document.getElementById("collapse-toggle");
+  if (collapseBtn) {
+    collapseBtn.classList.remove("hidden");
+    collapseBtn.addEventListener("click", () => {
+      window.electronAPI?.send("collapse");
+    });
+  }
+
+  function pushMiniState() {
+    if (!window.electronAPI) return;
+    const song = state.songs.find((s) => s.id === state.currentSongId);
+    window.electronAPI.send("mini-state", {
+      title: song ? song.title : null,
+      category: song ? song.category : null,
+      tags: song ? song.tags : [],
+      currentTime: audio.currentTime,
+      duration: audio.duration || 0,
+      paused: audio.paused,
+    });
+  }
+
+  audio.addEventListener("timeupdate", pushMiniState);
+  audio.addEventListener("play", pushMiniState);
+  audio.addEventListener("pause", pushMiniState);
+
+  if (window.electronAPI) {
+    window.electronAPI.on("mini-cmd", (cmd) => {
+      if (cmd === "request-state") {
+        pushMiniState();
+      } else if (cmd === "play-pause") {
+        if (state.currentSongId) handleSongPrimaryAction(state.currentSongId);
+      } else if (cmd === "next") {
+        nextSong();
+      } else if (cmd === "prev") {
+        prevSong();
+      } else if (cmd && cmd.type === "seek") {
+        const dur = audio.duration;
+        if (dur && isFinite(dur)) audio.currentTime = cmd.pct * dur;
+      }
+    });
+  }
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 searchInput.addEventListener("input", (e) => {
   state.search = e.target.value.trim().toLowerCase();
@@ -1642,12 +1758,14 @@ playerToggle.addEventListener("click", () => {
   else audio.pause();
 });
 
-playerPrev.addEventListener("click", () => {
+function prevSong() {
   if (!visibleSongs.length) return;
   const idx = visibleSongs.findIndex((s) => s.id === state.currentSongId);
   const prev = idx > 0 ? visibleSongs[idx - 1] : visibleSongs[visibleSongs.length - 1];
   playSong(prev.id);
-});
+}
+
+playerPrev.addEventListener("click", prevSong);
 
 playerNext.addEventListener("click", nextSong);
 
@@ -1712,9 +1830,13 @@ initTheme();
 categoryList.closest(".panel").classList.add("collapsed");
 emoteList.closest(".panel").classList.add("collapsed");
 notList.closest(".panel").classList.add("collapsed");
+notCategoryList.closest(".panel").classList.add("collapsed");
 
 document.querySelector("#not-list").closest(".panel").querySelector("h2").addEventListener("click", () => {
   notList.closest(".panel").classList.toggle("collapsed");
+});
+document.querySelector("#not-category-list").closest(".panel").querySelector("h2").addEventListener("click", () => {
+  notCategoryList.closest(".panel").classList.toggle("collapsed");
 });
 
 // Request storage permission on Android via Filesystem plugin

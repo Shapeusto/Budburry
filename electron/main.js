@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Tray, Menu, dialog } = require('electron')
+const { app, BrowserWindow, Tray, Menu, dialog, ipcMain, screen } = require('electron')
 const { spawn } = require('child_process')
 const path = require('path')
 const http = require('http')
@@ -29,6 +29,7 @@ if (!gotLock) {
 
 let pythonProcess = null
 let mainWindow = null
+let miniWindow = null
 let tray = null
 let isQuitting = false
 
@@ -80,6 +81,8 @@ function waitForServer(maxRetries = 30) {
   })
 }
 
+const preload = path.join(__dirname, 'preload.js')
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -87,7 +90,7 @@ function createWindow() {
     minWidth: 800,
     minHeight: 600,
     icon: path.join(appRoot, 'icons', 'icon.ico'),
-    webPreferences: { nodeIntegration: false, contextIsolation: true },
+    webPreferences: { nodeIntegration: false, contextIsolation: true, preload },
     backgroundColor: '#161616',
     show: false,
     autoHideMenuBar: true,
@@ -104,16 +107,76 @@ function createWindow() {
   })
 }
 
+function createMiniWindow() {
+  const { width, height } = screen.getPrimaryDisplay().workAreaSize
+  miniWindow = new BrowserWindow({
+    width: 340,
+    height: 130,
+    x: width - 360,
+    y: height - 150,
+    resizable: false,
+    frame: false,
+    alwaysOnTop: true,
+    show: false,
+    transparent: true,
+    webPreferences: { nodeIntegration: false, contextIsolation: true, preload },
+  })
+  miniWindow.loadURL(`http://127.0.0.1:${PORT}/mini-player.html`)
+  miniWindow.on('closed', () => { miniWindow = null })
+}
+
 function createTray() {
   tray = new Tray(path.join(appRoot, 'icons', 'icon.ico'))
   tray.setToolTip("Budburry's")
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Open', click: () => { mainWindow.show(); mainWindow.focus() } },
+    { label: 'Open', click: () => { if (miniWindow) miniWindow.hide(); mainWindow.show(); mainWindow.focus() } },
     { type: 'separator' },
     { label: 'Close', click: () => { isQuitting = true; app.quit() } },
   ]))
-  tray.on('double-click', () => { mainWindow.show(); mainWindow.focus() })
+  tray.on('double-click', () => { if (miniWindow) miniWindow.hide(); mainWindow.show(); mainWindow.focus() })
 }
+
+// IPC: collapse → hide main, show mini
+ipcMain.on('collapse', () => {
+  const show = () => {
+    mainWindow.hide()
+    miniWindow.show()
+    miniWindow.focus()
+    mainWindow.webContents.send('mini-cmd', 'request-state')
+  }
+  if (!miniWindow) {
+    createMiniWindow()
+    miniWindow.once('ready-to-show', show)
+  } else {
+    show()
+  }
+})
+
+// IPC: expand → hide mini, show main
+ipcMain.on('expand', () => {
+  if (miniWindow) miniWindow.hide()
+  mainWindow.show()
+  mainWindow.focus()
+})
+
+// IPC: minimize mini → hide mini (main stays hidden)
+ipcMain.on('minimize-mini', () => {
+  if (miniWindow) miniWindow.hide()
+})
+
+// IPC: main window pushes audio state → forward to mini
+ipcMain.on('mini-state', (_, state) => {
+  if (miniWindow && !miniWindow.isDestroyed()) {
+    miniWindow.webContents.send('mini-state', state)
+  }
+})
+
+// IPC: mini sends command → forward to main window renderer
+ipcMain.on('mini-cmd', (_, cmd) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('mini-cmd', cmd)
+  }
+})
 
 app.on('second-instance', () => {
   if (mainWindow) { mainWindow.show(); mainWindow.focus() }

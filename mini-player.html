@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="sk">
+<head>
+  <meta charset="UTF-8"/>
+  <title>Mini Player</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: transparent;
+      color: #f1f1f1;
+      font-family: "Inter", system-ui, -apple-system, sans-serif;
+      overflow: hidden;
+      user-select: none;
+      height: 100vh;
+    }
+
+    .mini-wrap {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      background: #161616;
+      border: 1px solid #2b2b2b;
+      border-radius: 5px;
+      overflow: hidden;
+    }
+
+    /* ── Section divider ── */
+    .mini-divider {
+      height: 1px;
+      background: #222;
+      flex-shrink: 0;
+    }
+
+    /* ── TOP: Category + buttons ── */
+    .mini-top {
+      -webkit-app-region: drag;
+      display: flex;
+      align-items: stretch;
+      justify-content: space-between;
+      height: 28px;
+      flex-shrink: 0;
+    }
+
+    .mini-category {
+      display: flex;
+      align-items: center;
+      padding: 0 10px;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #888;
+    }
+
+    .mini-top-btns {
+      -webkit-app-region: no-drag;
+      display: flex;
+      align-items: stretch;
+      padding-right: 2px;
+    }
+
+    .mini-icon-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 12px;
+      opacity: 0.4;
+      transition: opacity 0.15s;
+    }
+    #btn-minimize {
+      border-left: 1px solid #2b2b2b;
+      border-right: 1px solid #2b2b2b;
+    }
+    .mini-icon-btn:hover { opacity: 1; }
+
+    /* ── MIDDLE: Title + controls ── */
+    .mini-mid {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      padding: 0 10px;
+      gap: 20%;
+      min-height: 0;
+    }
+
+    .mini-title {
+      width: 40%;
+      flex-shrink: 0;
+      font-size: 11px;
+      font-weight: 400;
+      color: #d5d5d5;
+      line-height: 1.35;
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+    }
+
+    .mini-controls-wrap {
+      width: 40%;
+      flex-shrink: 0;
+      display: flex;
+      justify-content: center;
+    }
+
+    .mini-controls {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .mini-ctrl {
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .mini-ctrl.play {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background: #DBFF00;
+      transition: opacity 0.15s;
+    }
+    .mini-ctrl.play:hover { opacity: 0.85; }
+
+    .mini-ctrl.rw {
+      width: 22px;
+      height: 22px;
+      opacity: 0.45;
+      transition: opacity 0.15s;
+    }
+    .mini-ctrl.rw:hover { opacity: 1; }
+
+    /* ── BOTTOM: Tags (left) + progress (right) ── */
+    .mini-bottom {
+      display: flex;
+      align-items: center;
+      padding: 0 10px;
+      height: 36px;
+      gap: 20%;
+      flex-shrink: 0;
+    }
+
+    .mini-tags {
+      width: 40%;
+      flex-shrink: 0;
+      font-size: 9px;
+      font-weight: 500;
+      color: #484848;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .mini-progress-wrap {
+      width: 40%;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 3px;
+    }
+
+    .mini-times {
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .mini-time {
+      font-size: 9px;
+      color: #555;
+    }
+
+    .mini-seek {
+      height: 7px;
+      border-radius: 999px;
+      background:
+        linear-gradient(180deg, #484848 0%, #333333 100%) padding-box,
+        linear-gradient(180deg, #595959 0%, #333333 100%) border-box;
+      border: 1px solid transparent;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+    }
+
+    .mini-seek-bar {
+      height: 3px;
+      border-radius: 999px;
+      background: #DBFF00;
+      width: 0%;
+      pointer-events: none;
+      box-shadow: 0 0 3px 2px rgba(142, 255, 108, 0.3);
+    }
+
+    /* ── Mask icons ── */
+    .mi {
+      display: inline-block;
+      background-color: #f1f1f1;
+      -webkit-mask-repeat: no-repeat;
+      mask-repeat: no-repeat;
+      -webkit-mask-size: contain;
+      mask-size: contain;
+      -webkit-mask-position: center;
+      mask-position: center;
+    }
+    .mi-10 { width: 10px; height: 10px; }
+    .mi-12 { width: 12px; height: 12px; }
+    .mi-dark { background-color: #161616; }
+
+    .i-minimize { -webkit-mask-image: url("/icons/Minimize.svg");    mask-image: url("/icons/Minimize.svg"); }
+    .i-maximize { -webkit-mask-image: url("/icons/Maximize.svg");    mask-image: url("/icons/Maximize.svg"); }
+    .i-prev     { -webkit-mask-image: url("/icons/Leftrewind.svg");  mask-image: url("/icons/Leftrewind.svg"); }
+    .i-next     { -webkit-mask-image: url("/icons/Rightrewind.svg"); mask-image: url("/icons/Rightrewind.svg"); }
+    .i-play     { -webkit-mask-image: url("/icons/Play.svg");        mask-image: url("/icons/Play.svg"); transform: translateX(1px); }
+    .i-pause    { -webkit-mask-image: url("/icons/Stop.svg");        mask-image: url("/icons/Stop.svg"); }
+  </style>
+</head>
+<body>
+  <div class="mini-wrap">
+
+    <!-- TOP -->
+    <div class="mini-top">
+      <span class="mini-category" id="mini-category">—</span>
+      <div class="mini-top-btns">
+        <button class="mini-icon-btn" id="btn-minimize" title="Minimize">
+          <span class="mi mi-10 i-minimize"></span>
+        </button>
+        <button class="mini-icon-btn" id="btn-maximize" title="Open full player">
+          <span class="mi mi-10 i-maximize"></span>
+        </button>
+      </div>
+    </div>
+
+    <div class="mini-divider"></div>
+
+    <!-- MIDDLE -->
+    <div class="mini-mid">
+      <div class="mini-title" id="mini-title">No song playing</div>
+      <div class="mini-controls-wrap">
+        <div class="mini-controls">
+          <button class="mini-ctrl rw" id="btn-prev">
+            <span class="mi mi-12 i-prev"></span>
+          </button>
+          <button class="mini-ctrl play" id="btn-play">
+            <span class="mi mi-12 mi-dark i-play" id="play-icon"></span>
+          </button>
+          <button class="mini-ctrl rw" id="btn-next">
+            <span class="mi mi-12 i-next"></span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="mini-divider"></div>
+
+    <!-- BOTTOM -->
+    <div class="mini-bottom">
+      <div class="mini-tags" id="mini-tags"></div>
+      <div class="mini-progress-wrap">
+        <div class="mini-times">
+          <span class="mini-time" id="mini-current">0:00</span>
+          <span class="mini-time" id="mini-total">0:00</span>
+        </div>
+        <div class="mini-seek" id="mini-seek">
+          <div class="mini-seek-bar" id="mini-seek-bar"></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+  <script>
+    function fmt(s) {
+      if (!s || isNaN(s)) return '0:00'
+      const m = Math.floor(s / 60), sec = Math.floor(s % 60)
+      return m + ':' + String(sec).padStart(2, '0')
+    }
+
+    const elCategory = document.getElementById('mini-category')
+    const elTitle    = document.getElementById('mini-title')
+    const elTags     = document.getElementById('mini-tags')
+    const elCurrent  = document.getElementById('mini-current')
+    const elTotal    = document.getElementById('mini-total')
+    const seekBar    = document.getElementById('mini-seek-bar')
+    const playIcon   = document.getElementById('play-icon')
+
+    function setPlayIcon(paused) {
+      playIcon.className = 'mi mi-12 mi-dark ' + (paused ? 'i-play' : 'i-pause')
+    }
+
+    if (window.electronAPI) {
+      window.electronAPI.on('mini-state', (state) => {
+        elCategory.textContent = state.category || '—'
+        elTitle.textContent    = state.title    || 'No song playing'
+        elTags.textContent     = (state.tags || []).join(', ')
+        elCurrent.textContent  = fmt(state.currentTime)
+        elTotal.textContent    = fmt(state.duration)
+        const pct = state.duration ? (state.currentTime / state.duration * 100) : 0
+        seekBar.style.width = pct + '%'
+        setPlayIcon(state.paused)
+      })
+    }
+
+    document.getElementById('btn-minimize').onclick = () => window.electronAPI?.send('minimize-mini')
+    document.getElementById('btn-maximize').onclick = () => window.electronAPI?.send('expand')
+    document.getElementById('btn-play').onclick     = () => window.electronAPI?.send('mini-cmd', 'play-pause')
+    document.getElementById('btn-prev').onclick     = () => window.electronAPI?.send('mini-cmd', 'prev')
+    document.getElementById('btn-next').onclick     = () => window.electronAPI?.send('mini-cmd', 'next')
+
+    document.getElementById('mini-seek').onclick = (ev) => {
+      const rect = ev.currentTarget.getBoundingClientRect()
+      const pct  = (ev.clientX - rect.left) / rect.width
+      window.electronAPI?.send('mini-cmd', { type: 'seek', pct })
+    }
+  </script>
+</body>
+</html>

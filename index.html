@@ -18,6 +18,9 @@
     <div class="topbar-inner">
       <img id="brand-logo" src="" alt="Budburry's" class="logo" />
       <div class="topbar-right">
+        <button id="collapse-toggle" class="theme-toggle hidden" type="button" aria-label="Mini player">
+          <span class="ui-icon icon-collapse"></span>
+        </button>
         <button id="download-toggle" class="theme-toggle" type="button" aria-label="Download">
           <span id="download-toggle-icon" class="ui-icon icon-download"></span>
         </button>
@@ -77,10 +80,18 @@
       </section>
       <section class="panel">
         <div class="panel-head">
-          <h2><span class="panel-icon tag-tab-icon icon-emotenot"></span>Not</h2>
+          <h2><span class="panel-icon tag-tab-icon icon-emotenot"></span>Not emote</h2>
         </div>
         <div class="panel-body">
           <ul id="not-list"></ul>
+        </div>
+      </section>
+      <section class="panel">
+        <div class="panel-head">
+          <h2><span class="panel-icon tag-tab-icon icon-category"></span>Not category</h2>
+        </div>
+        <div class="panel-body">
+          <ul id="not-category-list"></ul>
         </div>
       </section>
     </aside>
