@@ -385,9 +385,10 @@ def delete_category(name: str):
         raise ValueError("invalid category path")
     if not target.exists() or not target.is_dir():
         raise ValueError("category not found")
-    if any(target.iterdir()):
+    audio_exts = {".mp3", ".m4a", ".webm", ".opus", ".flac", ".wav", ".aac"}
+    if any(f.suffix.lower() in audio_exts for f in target.iterdir() if f.is_file()):
         raise ValueError("category is not empty")
-    target.rmdir()
+    shutil.rmtree(str(target))
 
 
 def safe_move_song(song_id: str, target_category: str):
