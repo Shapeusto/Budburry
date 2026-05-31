@@ -424,6 +424,10 @@ def safe_move_song(song_id: str, target_category: str):
         if old_id in db:
             db[new_id] = db.pop(old_id)
             save_tags_db(db)
+        rdb = load_ratings_db()
+        if old_id in rdb:
+            rdb[new_id] = rdb.pop(old_id)
+            save_ratings_db(rdb)
     return new_id
 
 
