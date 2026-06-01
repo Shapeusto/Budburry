@@ -1869,11 +1869,27 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
   })();
 }
 
+(function() {
+  const percentEl = document.getElementById("preloader-percent");
+  if (!percentEl) return;
+  const duration = 3000;
+  const start = performance.now();
+  function tick(now) {
+    const t = Math.min((now - start) / duration, 1);
+    const eased = 1 - Math.pow(1 - t, 3);
+    percentEl.textContent = Math.round(eased * 90) + "%";
+    if (t < 1) requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+})();
+
 loadData().then(() => {
   const preloaderBar = document.getElementById("preloader-bar");
   const preloader = document.getElementById("preloader");
+  const percentEl = document.getElementById("preloader-percent");
   preloaderBar.style.animation = "none";
   preloaderBar.style.width = "100%";
+  if (percentEl) percentEl.textContent = "100%";
   setTimeout(() => {
     preloader.classList.add("hidden");
     setTimeout(() => {

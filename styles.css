@@ -617,12 +617,39 @@ body.dark .download-progress-bar {
 .preloader {
   position: fixed;
   inset: 0;
-  background: var(--bg);
+  background: var(--bg) url('/background.webp') no-repeat center center / cover;
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 9999;
   transition: opacity 0.5s ease;
+}
+
+.preloader-percent {
+  font-size: 8px;
+  color: rgba(255, 255, 255, 0.6);
+  text-align: center;
+  letter-spacing: 0.05em;
+}
+
+.preloader-credits {
+  position: absolute;
+  bottom: 20px;
+  font-size: 8px;
+  color: rgba(255, 255, 255, 0.2);
+  text-transform: uppercase;
+  line-height: 1.7;
+  letter-spacing: 0.05em;
+}
+
+.preloader-credits-left {
+  left: 20px;
+  text-align: left;
+}
+
+.preloader-credits-right {
+  right: 20px;
+  text-align: right;
 }
 
 .preloader.hidden {
